@@ -18,11 +18,20 @@ public class graphics {
 
         for (int i = 7; i >= 0; i--) {
             if (((spriteData >> i) & 1) == 1) {
-                erased |= this.pixels[7 - i + x][y];
-                this.pixels[7 - i + x][y] ^= true; //flip bit
+                erased |= this.drawPixel(7 - i + x, y);
             }
         }
 
+        return erased;
+    }
+
+    public boolean drawPixel(int x, int y) {
+        if (x < 0 || x > 63 || y < 0 || y > 31) { // don't draw if off screen
+            System.out.println("x=" + x + " y=" + y);
+            return false;
+        }
+        boolean erased = this.pixels[x][y];
+        this.pixels[x][y] ^= true; //flip bit
         return erased;
     }
 

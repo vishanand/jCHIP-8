@@ -18,6 +18,8 @@ public class chip8 {
         this.redrawFlag = false;
         this.pc = 0x200; //execution starting point
         this.loadFonts();
+        this.keypad = new boolean[16];
+        this.pressKey(-1);
         //clear registers & stack
         this.dt = 0;
         this.st = 0;
@@ -96,10 +98,9 @@ public class chip8 {
         int opcode = byte1 | byte2;
 
         /*
-         * System.out.println(Integer.toHexString(opcode)); for (int i = 0; i <
-         * this.register.length; i++) {
+         * if (this.dt == 1) { for (int i = 0; i < this.register.length; i++) {
          * System.out.print(Integer.toHexString(this.register[i]) + " "); }
-         * System.out.print(Integer.toHexString(this.I) + " \n\n");
+         * System.out.print(Integer.toHexString(this.I) + " \n\n"); }
          */
 
         // Decode & Execute
@@ -123,7 +124,6 @@ public class chip8 {
         int KK = opcode & 0x00FF; // last byte
         int X = (opcode & 0x0F00) >> 8; // second nibble
         int Y = (opcode & 0x00F0) >> 4; // third nibble
-
         this.redrawFlag = false;
 
         switch ((opcode & 0xF000) >> 12) { // switch off of first nibble
@@ -135,8 +135,6 @@ public class chip8 {
                 } else if (opcode == 0xEE) { //00EE RET
                     this.pc = this.stack[this.sp];
                     this.sp--;
-
-                    System.out.println("00EE RET");
                 } else {
                     System.out.println(
                             "0NNN encountered! Cannot jump to SYS instruction!  "
@@ -152,10 +150,9 @@ public class chip8 {
 
             // 2NNN: CALL addr
             case 0x2: //call subroutine
+                this.sp++;
                 this.stack[this.sp] = this.pc;
                 this.pc = address;
-                this.sp++;
-                System.out.println("2NNN " + Integer.toHexString(address));
                 return;
 
             // ANNN: LD I, addr
@@ -206,11 +203,14 @@ public class chip8 {
             // 7XKK: ADD Vx, byte
             case 0x7: // add KK into Vx
                 this.register[X] += KK;
+                this.register[X] &= 0xFF; //limit to 8 bits
                 this.pc += 2;
                 return;
 
             // 8XY*
             case 0x8:
+                this.register[X] &= 0xFF; //limit to 8 bits
+                this.register[Y] &= 0xFF; //limit to 8 bits
                 switch (lastNibble) {
                     // 8XY0: LD Vx, Vy
                     case 0x0: // Vx = Vy
@@ -244,7 +244,7 @@ public class chip8 {
                         } else {
                             this.register[0xF] = 0;
                         }
-                        this.register[X] = result & 0xFFFF;
+                        this.register[X] = result & 0xFF;
 
                         this.pc += 2;
                         return;
@@ -267,8 +267,7 @@ public class chip8 {
                     // 8XY6: SHR Vx {, Vy}
                     case 0x6: // Vx = Vy >> 1, set flag to least sig bit of Vx beforehand
                         this.register[0xF] = this.register[X] & 1;
-                        this.register[Y] = this.register[Y] >> 1;
-                        this.register[X] = this.register[Y];
+                        this.register[X] = this.register[X] >> 1;
                         this.pc += 2;
                         return;
 
@@ -289,8 +288,7 @@ public class chip8 {
                     // 8XYE: SHL Vx {, Vy}
                     case 0xE: // Vx = Vy << 1, set flag to most sig bit of Vx beforehand
                         this.register[0xF] = (this.register[X] & 0x80) >> 7;
-                        this.register[Y] = this.register[Y] << 1;
-                        this.register[X] = this.register[Y];
+                        this.register[X] = this.register[X] << 1;
                         this.pc += 2;
                         return;
                 }
@@ -328,11 +326,112 @@ public class chip8 {
                     this.register[0xF] = 1;
                 }
 
+                this.redrawFlag = true;
                 this.pc += 2;
                 return;
 
-        }
+            // EX9E & EXA1
+            case 0xE:
+                // EX9E: SKP Vx
+                if (KK == 0x9E) {
+                    // skip next instruction if key stored in Vx is pressed
+                    if (this.keypad[this.register[X]]) {
+                        this.pc += 2;
+                    }
+                    this.pc += 2;
+                    return;
+                }
 
+                // EXA1: SKNP Vx
+                else if (KK == 0xA1) {
+                    // skip next instruction if key stored in Vx is not pressed
+                    if (!this.keypad[this.register[X]]) {
+                        this.pc += 2;
+                    }
+                    this.pc += 2;
+                    return;
+                }
+                break;
+
+            // FX** instructions
+            case 0xF:
+                switch (KK) {
+                    // FX07: LD Vx, DT
+                    case 0x07:
+                        this.register[X] = this.dt; // store value of x register into delay timer
+                        this.pc += 2;
+                        return;
+
+                    // FX0A: LD Vx, K
+                    case 0x0A: // wait for keypress then store value to Vx
+                        int key = -1;
+                        for (int i = 0; i <= 0xF; i++) {
+                            if (this.keypad[i]) {
+                                key = i;
+                            }
+                        }
+                        if (key != -1) {
+                            this.register[X] = key;
+                            this.pc += 2; // only go to next instruction if key is pressed
+                        }
+                        return;
+
+                    // FX15: LD DT, Vx
+                    case 0x15: // set delay timer to value of Vx
+                        this.dt = this.register[X];
+                        this.pc += 2;
+                        return;
+
+                    // FX18: LD ST, Vx
+                    case 0x18: // set sound timer to value of Vx
+                        this.st = this.register[X];
+                        this.pc += 2;
+                        return;
+
+                    // FX1E: ADD I, Vx
+                    case 0x1E: // I += Vx
+                        this.I += this.register[X];
+                        this.pc += 2;
+                        return;
+
+                    // FX29: LD F, Vx
+                    case 0x29: // set I to location of font for hex digit Vx
+                        this.I = this.register[X] * 5;
+                        this.pc += 2;
+                        return;
+
+                    // FX33: LD B, Vx
+                    case 0x33: // TODO!!!
+                        // Store BCD representation of Vx in memory locations I, I+1, and I+2.
+                        // this BCD conversion formula was taken from TJA
+                        this.mem.setByte(this.I, this.register[X] / 100);
+                        this.mem.setByte(this.I + 1,
+                                (this.register[X] / 10) % 10);
+                        this.mem.setByte(this.I + 2,
+                                (this.register[X] % 100) % 10);
+                        this.pc += 2;
+                        return;
+
+                    // FX55: LD [I], Vx
+                    case 0x55: // copies registers V0 to Vx to memory starting at I
+                        for (int i = 0; i <= X; i++) {
+                            this.mem.setByte(this.I, this.register[i]);
+                            this.I++;
+                        }
+                        this.pc += 2;
+                        return;
+
+                    // Fx65: LD Vx, [I]
+                    case 0x65: // reads registers V0 to Vx from memory starting at I
+                        for (int i = 0; i <= X; i++) {
+                            this.register[i] = this.mem.getByte(this.I);
+                            this.I++;
+                        }
+                        this.pc += 2;
+                        return;
+                }
+        }
+        System.out.println("Unknown Upcode: " + Integer.toHexString(opcode));
         this.pc += 2;
 
     }
@@ -341,10 +440,31 @@ public class chip8 {
         return this.redrawFlag;
     }
 
+    public boolean playSound() {
+        return this.st > 0;
+    }
+
+    /**
+     * Press a key on the hexadecimal input keypad
+     *
+     * @param key
+     *            Which Key to press (0-0xF), an invalid choice is interpreted
+     *            as no key being pressed
+     */
+    public void pressKey(int key) {
+        for (int i = 0; i <= 0xF; i++) { // clear all other keys
+            this.keypad[i] = false;
+        }
+        if (key >= 0 && key <= 0xF) {
+            this.keypad[key] = true;
+        }
+    }
+
     public memory mem; // 4KB of working RAM
     private Random rand;
     public graphics display; //64x32 monochrome display
     private boolean redrawFlag;
+    private boolean keypad[]; //hexadecimal input keypad
 
     private int stack[]; // Call stack
     private int register[]; // V registers
