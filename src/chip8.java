@@ -401,7 +401,7 @@ public class chip8 {
                         return;
 
                     // FX33: LD B, Vx
-                    case 0x33: // TODO!!!
+                    case 0x33:
                         // Store BCD representation of Vx in memory locations I, I+1, and I+2.
                         // this BCD conversion formula was taken from TJA
                         this.mem.setByte(this.I, this.register[X] / 100);
@@ -418,6 +418,7 @@ public class chip8 {
                             this.mem.setByte(this.I, this.register[i]);
                             this.I++;
                         }
+                        this.I -= X + 1; // TODO: figure out if I is supposed to change or not in FX55 and FX65
                         this.pc += 2;
                         return;
 
@@ -427,6 +428,7 @@ public class chip8 {
                             this.register[i] = this.mem.getByte(this.I);
                             this.I++;
                         }
+                        this.I -= X + 1;
                         this.pc += 2;
                         return;
                 }
@@ -440,7 +442,7 @@ public class chip8 {
         return this.redrawFlag;
     }
 
-    public boolean playSound() {
+    public boolean shouldSoundPlay() {
         return this.st > 0;
     }
 
@@ -452,12 +454,35 @@ public class chip8 {
      *            as no key being pressed
      */
     public void pressKey(int key) {
-        for (int i = 0; i <= 0xF; i++) { // clear all other keys
-            this.keypad[i] = false;
+        if (key == -1) {
+            for (int i = 0; i <= 0xF; i++) { // clear all other keys
+                this.keypad[i] = false;
+            }
         }
         if (key >= 0 && key <= 0xF) {
             this.keypad[key] = true;
         }
+    }
+
+    /**
+     * Release a key on the hexadecimal input keypad
+     *
+     * @param key
+     *            Which key to release (0-0xF)
+     */
+    public void releaseKey(int key) {
+        if (key >= 0 && key <= 0xF) {
+            this.keypad[key] = false;
+        }
+    }
+
+    public String getCPUInfo() {
+        String cpuInfo = String.format(
+                "<html><pre>OPCODE=%02X%02X, PC=%03X, I=%04X, SP=%02X, V0=%02X, V1=%02X, VF=%02X, ST=%02X, DT=%02X</pre></html>",
+                this.mem.getByte(this.pc), this.mem.getByte(this.pc + 1),
+                this.pc, this.I, this.sp, this.register[0x0],
+                this.register[0x1], this.register[0xF], this.st, this.dt);
+        return cpuInfo;
     }
 
     public memory mem; // 4KB of working RAM
